@@ -31,20 +31,14 @@ local function print_headers(d)
 end
 
 local function part_formatvalue(v, k)
-	if v:find("^........%-....%-....%-....%-............$") then
-		if k=="type" or k=="uuid" then
-			return tostring(v)
-		else
-			return v
-		end
-	elseif (k=="name" or k=="attrs") then -- or v:find("[^0-9]") then
+	if k=="type" or k=="uuid" then -- UUID or number
+		return v
+	elseif k=="start" or k=="size" then
+		return ("%12s"):format(v)
+	elseif (k=="name" or k=="attrs") then
 		return ('"%s"'):format(v)
 	else
-		if k=="start" or k=="size" then
-			return ("%12s"):format(v)
-		else
-			return v
-		end
+		error("field "..k.." is not implemented, fix the code")
 	end
 end
 local function print_partitions(parts)
@@ -74,7 +68,6 @@ end
 local d = fd:read("*a")
 d = json.decode(d)
 
-d = d.partitiontable
-print_headers(d)
+print_headers(d.partitiontable)
 print("")
-print_partitions(d.partitions)
+print_partitions(d.partitiontable.partitions)

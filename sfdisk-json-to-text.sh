@@ -3,10 +3,7 @@
 headers_fields='label id device unit firstlba lastlba'
 partitions_fields='start size type uuid name attrs bootable'
 
-json_action() {
-	jq < "$file" "$@";
-}
-
+# because sfdisk does not export in json with the exact txt required key!
 sfdisk_fix() {
 	case "$1" in
 		(id)		echo "label-id";;
@@ -15,6 +12,11 @@ sfdisk_fix() {
 		(*)		echo "$1";;
 	esac
 }
+
+json_action() {
+	jq < "$file" "$@";
+}
+
 # jq export value for sh with single quote
 # 'value' => value
 jq_fix_k() {
@@ -25,20 +27,12 @@ jq_fix_k() {
 
 # part_fix_v $v $k
 part_fix_v() {
-	case "$1" in
-		(????????-????-????-????-????????????)
-			# UUID
-			echo "$1"
-		;;
-		(*[^0-9]*)
-			# text
-			printf '"%s"' "$1"
-		;;
-		(*)	# a number
-			case "$2" in
-				(start|size) printf '%12s' "$1" ;;
-				(*) echo "$1";;
-			esac
+	case "$2" in
+		(start|size)	printf '%12s' "$1"	;;
+		(type|uuid)	printf '%s' "$1"	;;
+		(name|attrs)	printf '"%s"' "$1"	;;
+		(*)	echo >&2 "field "..$2.." is not implemented, fix the code"
+			exit 1
 		;;
 	esac
 }
@@ -46,23 +40,23 @@ part_fix_v() {
 #getkeys() { jq -r 'keys|@sh'; }
 #for k in $(json_action '.partitiontable|del(.partitions)' | getkeys); do
 print_headers() {
+	local filter="${1:-.}";shift;
 	for k in $headers_fields; do
 		jq_fix_k
-		kfixed="$(sfdisk_fix "$k")"
-		v="$(json_action -r '.partitiontable|del(.partitions)|.'"$k"'|select(.!=null)')"
+		local kfixed="$(sfdisk_fix "$k")"
+		local v="$(json_action -r "$filter"'|.'"$k"'|select(.!=null)')"
 		[ -z "$v" ] || echo "$kfixed: $v"
 	done
 }
 
 partition_n() {
 	local n="$1";shift;
-	local filter='.partitiontable.partitions| .['"$n"']'
+	local filter="${1:-.}"'|.['"$n"']'
 
 	local k=node
 	printf '%s : ' "$(json_action -r "$filter | $(printf '.["%s"]' "$k")")"
 
 	local first=true
-	#for k in start size type uuid name attrs bootable; do
 	for k in $partitions_fields; do
 		jq_fix_k
 		[ "$k" != "node" ] || continue
@@ -87,10 +81,11 @@ partition_n() {
 	printf '\n'
 }
 print_partitions() {
-	len=$(json_action '.partitiontable.partitions|length')
+	local filter="${1:-.}";shift;
+	len=$(json_action "$filter"'|length')
 	if [ ${len:-0} -gt 0 ]; then 
 		for n in $(seq 0 $(( $len -1 )) ); do
-			partition_n $n
+			partition_n $n "$filter"
 		done
 	fi
 }
@@ -104,8 +99,8 @@ else
 	[ -f "$file" ] || exit 1
 fi
 
-print_headers
+print_headers '.partitiontable'
 echo ""
-print_partitions
+print_partitions '.partitiontable.partitions'
 
 
